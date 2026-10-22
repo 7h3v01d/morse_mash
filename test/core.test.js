@@ -226,7 +226,7 @@ describe('Daily message', () => {
 describe('Badges', () => {
   const zero = {
     n: 5, bestStreak: 0, bestSprint: 0, tracked: 0, shaky: 0,
-    stats: { treeBest: 0, tapBest: 0, mashClean: 0, silent: 0 }, dailyBest: 0
+    stats: { treeBest: 0, tapBest: 0, wordBest: 0, mashClean: 0, silent: 0 }, dailyBest: 0
   };
   const earned = (s) => C.BADGES.filter((b) => { const g = b.goal(s); return g[0] >= g[1]; }).map((b) => b.id);
 
@@ -250,5 +250,177 @@ describe('Badges', () => {
   it('only counts Solid Ground when nothing is shaky', () => {
     assert.ok(!earned({ ...zero, tracked: 20, shaky: 2 }).includes('solid'));
     assert.ok(earned({ ...zero, tracked: 15, shaky: 0 }).includes('solid'));
+  });
+});
+
+describe('Farnsworth timing', () => {
+  it('matches standard timing when the overall speed equals the character speed', () => {
+    assert.equal(C.farnsworthGap(20, 20), C.unitMs(20));
+    assert.equal(C.farnsworthGap(20, 25), C.unitMs(20));
+    assert.equal(C.farnsworthGap(20, 0), C.unitMs(20));
+  });
+
+  it('stretches gaps so PARIS takes exactly one minute / effective WPM', () => {
+    for (const [c, s] of [[20, 5], [18, 10], [15, 12], [25, 8]]) {
+      const unit = C.unitMs(c);
+      const total = C.buildSchedule('PARIS ', unit, C.farnsworthGap(c, s)).total;
+      assert.ok(Math.abs(total - 60000 / s) < 1e-6, c + '/' + s + ': ' + total);
+    }
+  });
+
+  it('keeps the characters themselves at full speed', () => {
+    const fast = C.buildSchedule('A', 60, C.farnsworthGap(20, 5)).ev;
+    assert.deepEqual(fast, [{ start: 0, dur: 60 }, { start: 120, dur: 180 }]);
+  });
+
+  it('ignores a gap shorter than the unit', () => {
+    assert.equal(C.buildSchedule('PARIS ', 1, 0.5).total, 50);
+  });
+});
+
+describe('Prosigns', () => {
+  it('has unique codes that do not clash with the 36 characters', () => {
+    const codes = Object.values(C.PROSIGNS);
+    assert.equal(new Set(codes).size, codes.length);
+    codes.forEach((c) => assert.equal(C.REV[c], undefined, c));
+    Object.keys(C.PROSIGNS).forEach((k) => assert.ok(C.PROSIGN_INFO[k], k));
+  });
+
+  it('reads <AR> style tokens and leaves unknown brackets out', () => {
+    const t = C.tokenize('hi <ar> <zz>');
+    assert.deepEqual(t.map((x) => (x === ' ' ? '_' : x.label)), ['H', 'I', '_', 'AR', '_', 'Z', 'Z']);
+    assert.equal(t[3].pro, true);
+  });
+
+  it('sends a prosign as one run with no letter gap', () => {
+    const pro = C.buildSchedule('<SK>', 1);
+    const letters = C.buildSchedule('SK', 1);
+    assert.equal(pro.ev.length, letters.ev.length);
+    assert.equal(letters.total - pro.total, 2);
+  });
+});
+
+describe('Saved progress', () => {
+  it('returns defaults for junk', () => {
+    for (const junk of [null, 'x', 42, [], { n: 99, wpm: 'fast' }]) assert.deepEqual(C.restoreState(junk), C.freshState());
+  });
+
+  it('round-trips a real state through export and import', () => {
+    const s = C.freshState();
+    s.n = 12; s.wpm = 18; s.eff = 8;
+    s.mastery.K = { ok: 3, tot: 4, rec: '1101' };
+    s.conf['S>H'] = 2;
+    s.badges.first = '2026-10-20';
+    s.daily = { last: '2026-10-22', streak: 3, best: 4, solved: 9, tries: 1 };
+    s.sig.noise = 3;
+    s.opts.pro = true;
+    s.mastery.AR = { ok: 1, tot: 2, rec: '01' };
+    s.conf['AR>K'] = 1;
+    const file = JSON.parse(JSON.stringify(C.exportState(s, '2026-10-23')));
+    assert.equal(file.app, 'morse-mash');
+    assert.deepEqual(C.restoreState(file), s);
+  });
+
+  it('drops bad entries and clamps values', () => {
+    const r = C.restoreState({
+      wpm: 12, eff: 20,
+      mastery: { K: { ok: 9, tot: 4, rec: '1x' }, '!': { ok: 1, tot: 1 }, M: 'nope' },
+      conf: { 'S>H': 2, 'S>S': 1, 'Q>?': 3, 'K>M': -1 },
+      badges: { first: '2026-01-01', fake: '2026-01-01', ten: 'yesterday' },
+      stats: { treeBest: 3.7, tapBest: -2, extra: 5 },
+      sig: { sound: false, light: false, buzz: false }
+    });
+    assert.equal(r.eff, 12);
+    assert.deepEqual(Object.keys(r.mastery), ['K']);
+    assert.equal(r.mastery.K.ok, 4);
+    assert.deepEqual(r.conf, { 'S>H': 2 });
+    assert.deepEqual(r.badges, { first: '2026-01-01' });
+    assert.deepEqual(r.stats, { treeBest: 3, tapBest: 0, wordBest: 0, mashClean: 0, silent: 0 });
+    assert.equal(r.sig.sound, true);
+  });
+
+  it('maps the old on/off noise setting to a level', () => {
+    assert.equal(C.restoreState({ sig: { noise: true } }).sig.noise, 2);
+    assert.equal(C.restoreState({ sig: { noise: false } }).sig.noise, 0);
+    assert.equal(C.restoreState({ sig: { noise: 9 } }).sig.noise, 0);
+  });
+
+  it('migrates old saves that only kept totals', () => {
+    const r = C.restoreState({ mastery: { S: { ok: 15, tot: 20 } } });
+    assert.equal(r.mastery.S.rec, '000111111111');
+  });
+});
+
+describe('Daily share text', () => {
+  it('shows the result and the coded message', () => {
+    const t = C.dailyShareText('2026-10-23', 'SOS HI', 0, 3);
+    assert.match(t, /^Morse Mash daily 2026-10-23\nSolved first try, streak 3\n/);
+    assert.ok(t.endsWith('••• ——— ••• / •••• ••'));
+    assert.match(C.dailyShareText('2026-10-23', 'HI', 2, 1), /Solved after 3 tries\n/);
+  });
+});
+
+describe('Prosigns in Listen', () => {
+  it('looks up codes and send text for characters and prosigns', () => {
+    assert.equal(C.codeFor('K'), '-.-');
+    assert.equal(C.codeFor('AR'), '.-.-.');
+    assert.equal(C.codeFor('ZZ'), null);
+    assert.equal(C.sendText('AR'), '<AR>');
+    assert.equal(C.sendText('K'), 'K');
+  });
+
+  it('compares a prosign with a character', () => {
+    assert.equal(C.compareNote('AR', 'R'), 'AR is R plus 2 more symbols.');
+    assert.equal(C.compareNote('SK', 'K'), 'SK has 6 symbols, K has 3.');
+    assert.equal(C.compareNote('A', 'AR'), 'AR is A plus 3 more symbols.');
+  });
+});
+
+describe('Sending a word', () => {
+  // Builds press times from a code string like ".- -.", with gaps in units.
+  const presses = (codes, unit, inner, between) => {
+    const out = [];
+    let t = 0;
+    codes.split(' ').forEach((code, li) => {
+      if (li) t += between - inner;
+      [...code].forEach((s) => {
+        const d = s === '.' ? unit : 3 * unit;
+        out.push({ down: t, up: t + d });
+        t += d + inner;
+      });
+    });
+    return out;
+  };
+
+  it('splits letters at standard spacing', () => {
+    assert.deepEqual(C.segmentTaps(presses('... --- ...', 100, 100, 300), 100), ['...', '---', '...']);
+  });
+
+  it('copes with sloppy but readable timing', () => {
+    assert.deepEqual(C.segmentTaps(presses('.- -.', 100, 150, 260), 100), ['.-', '-.']);
+  });
+
+  it('stretches the letter split with Farnsworth spacing', () => {
+    const unit = 60, gap = C.farnsworthGap(20, 8);
+    assert.ok(C.letterSplit(unit, gap) > 2 * unit);
+    assert.equal(C.letterSplit(unit, unit), 2 * unit);
+    // A 250 ms pause runs letters together at plain 20 WPM spacing but is still inside one letter with Farnsworth.
+    const p = presses('. .', 60, 60, 250);
+    assert.deepEqual(C.segmentTaps(p, unit, unit), ['.', '.']);
+    assert.deepEqual(C.segmentTaps(p, unit, gap), ['..']);
+  });
+
+  it('handles no presses', () => {
+    assert.deepEqual(C.segmentTaps([], 100), []);
+  });
+
+  it('scores each letter and flags missing and extra ones', () => {
+    const r = C.scoreWord('SOS', ['...', '--.', '...', '.']);
+    assert.deepEqual(r.map((x) => x.ok), [true, false, true, false]);
+    assert.equal(r[1].got, 'G');
+    assert.equal(r[3].want, null);
+    const short = C.scoreWord('CAT', ['-.-.']);
+    assert.deepEqual(short.map((x) => x.code), ['-.-.', '', '']);
+    assert.equal(short[1].got, null);
   });
 });

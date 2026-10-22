@@ -29,9 +29,14 @@
       <input type="range" id="setSize" min="2" max="36" value="5">
     </div>
     <div class="field">
-      <label for="wpm">Speed <b id="wpmVal">10 WPM</b></label>
+      <label for="wpm">Character speed <b id="wpmVal">10 WPM</b></label>
       <input type="range" id="wpm" min="5" max="25" value="10">
     </div>
+    <div class="field">
+      <label for="eff">Overall speed <b id="effVal">same</b></label>
+      <input type="range" id="eff" min="5" max="10" value="10" aria-describedby="timing">
+    </div>
+    <p class="timing" id="timing" aria-live="polite"></p>
     <div class="set-list" id="setList" aria-live="polite"></div>
     <div class="signals" role="group" aria-labelledby="sigLab">
       <span class="siglab" id="sigLab">Signals</span>
@@ -39,6 +44,9 @@
         <label class="check" for="sigSound"><input type="checkbox" id="sigSound"> Sound</label>
         <label class="check" for="sigLight"><input type="checkbox" id="sigLight"> Light</label>
         <label class="check" for="sigBuzz"><input type="checkbox" id="sigBuzz"> <span id="sigBuzzTxt">Buzz</span></label>
+        <label class="check" for="sigNoise">Noise
+          <select id="sigNoise"><option value="0">Off</option><option value="1">Light</option><option value="2">Medium</option><option value="3">Heavy</option></select>
+        </label>
         <button class="btn ghost sm" id="sigTest" type="button">Test signals</button>
       </div>
       <p class="signote" id="sigNote"></p>
@@ -64,13 +72,20 @@
       <p>A dot is one short beep. A dash lasts three times as long. Tap any character to hear it. Dimmed ones are outside your practice set for now.</p>
       <div class="detail" id="detail"></div>
       <div class="grid" id="grid"></div>
+      <h2>Prosigns</h2>
+      <p>Procedure signals are sent as one run with no letter gap, written with a bar on top or in angle brackets. Tap one to hear it.</p>
+      <div class="pros" id="pros"></div>
       <h2>Playground</h2>
-      <p>Type anything and hear it sent at your chosen speed.</p>
+      <p>Type anything and hear it sent at your chosen speed. Put prosigns in angle brackets, like <code>CQ CQ &lt;KN&gt;</code>.</p>
       <form class="play-in" id="playForm">
-        <input id="playText" value="SOS" maxlength="40" autocomplete="off" aria-label="Text to send in Morse">
+        <input id="playText" value="SOS" maxlength="60" autocomplete="off" aria-label="Text to send in Morse">
         <button class="btn" type="submit">Send it</button>
       </form>
       <div class="out-code" id="playOut"></div>
+      <div class="row">
+        <button class="btn ghost" id="printCard" type="button">Print a cheat sheet</button>
+        <button class="btn ghost" id="printMono" type="button">Print in black and white</button>
+      </div>
     </section>
 
     <!-- TREE -->
@@ -104,7 +119,7 @@
     <!-- LISTEN -->
     <section class="panel" id="listen" hidden>
       <h2>Ear trainer</h2>
-      <p>Listen, then pick the character. Hit 90% over ten answers and a new character joins your set. Keyboard: press the letter, Space to replay or go next.</p>
+      <p>Listen, then pick the character. Hit 90% over ten answers and a new character joins your set. Keyboard: press the letter, or 1 to 4 for the choices in order (Shift + 1 to 4 once numbers are in play), and Space to replay or go next.</p>
       <div class="stats">
         <span>Score <b id="lScore">0</b></span>
         <span>Streak <b id="lStreak">0</b></span>
@@ -119,12 +134,22 @@
         <div class="msg" id="lMsg" aria-live="polite"></div>
         <button class="btn" id="lNext" hidden>Next</button>
       </div>
+      <div class="row">
+        <label class="check" for="lPro"><input type="checkbox" id="lPro"> Include prosigns <span class="small-note" id="lProNote"></span></label>
+        <label class="check" for="lAuto"><input type="checkbox" id="lAuto"> Keep going after a miss</label>
+      </div>
     </section>
 
     <!-- TAP -->
     <section class="panel" id="tap" hidden>
       <h2>Tap it out</h2>
-      <p>Send the character shown. Press the key, or hold Space. A quick press is a dot, a long one is a dash. Pause when you are done and it checks you.</p>
+      <p>Send what is shown. Press the key, or hold Space. A quick press is a dot, a long one is a dash.</p>
+      <div class="seg">
+        <div class="pair" role="group" aria-label="What to send">
+          <button id="tLetters" aria-pressed="true">Letters</button>
+          <button id="tWords" aria-pressed="false">Words</button>
+        </div>
+      </div>
       <div class="stats">
         <span>Score <b id="tScore">0</b></span>
         <span>Streak <b id="tStreak">0</b></span>
@@ -134,7 +159,12 @@
         <div class="reveal" id="tHint"></div>
         <div class="entered" id="tEntered" aria-label="What you tapped"></div>
         <button class="key" id="tKey" aria-label="Morse key. Press for a dot, hold for a dash.">TAP<small>or hold Space</small></button>
+        <p class="guide" id="tGuide"></p>
         <div class="msg" id="tMsg" aria-live="polite"></div>
+        <div class="row" id="tWordBtns" hidden>
+          <button class="btn" id="tDone" type="button">Done</button>
+          <button class="btn ghost" id="tRetry" type="button">Start the word over</button>
+        </div>
         <button class="btn ghost" id="tHintBtn">Show the pattern</button>
       </div>
     </section>
@@ -203,6 +233,7 @@
       <div class="msg" id="dMsg" aria-live="polite"></div>
       <div class="row">
         <button class="btn ghost" id="dHear">Hear it</button>
+        <button class="btn ghost" id="dShare" hidden>Share result</button>
         <label class="check" for="dHide"><input type="checkbox" id="dHide"> Hide the dots and dashes</label>
       </div>
     </section>
@@ -221,6 +252,12 @@
         </span>
       </div>
       <div class="msg" id="wMsg" aria-live="polite"></div>
+      <div class="row backup">
+        <span>Your progress lives in this browser.</span>
+        <button class="btn ghost sm" id="wExport" type="button">Download a backup</button>
+        <button class="btn ghost sm" id="wImport" type="button">Restore from file</button>
+        <input type="file" id="wFile" accept="application/json,.json" hidden>
+      </div>
       <h2>Shaky characters</h2>
       <div class="weak-list" id="wList"></div>
       <h2>Mix-ups</h2>
@@ -240,8 +277,20 @@
   </main>
 </div>
 <div class="toast" id="toast" hidden role="status"></div>
+<section class="cheat" id="cheat" aria-hidden="true"></section>
 
 <script src="js/morse-core.js"></script>
-<script src="js/app.js"></script>
+<script src="js/app/shared.js"></script>
+<script src="js/app/settings.js"></script>
+<script src="js/app/learn.js"></script>
+<script src="js/app/tree.js"></script>
+<script src="js/app/listen.js"></script>
+<script src="js/app/tap.js"></script>
+<script src="js/app/mash.js"></script>
+<script src="js/app/sprint.js"></script>
+<script src="js/app/daily.js"></script>
+<script src="js/app/weak.js"></script>
+<script src="js/app/badges.js"></script>
+<script src="js/app/main.js"></script>
 </body>
 </html>

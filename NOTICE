@@ -1,0 +1,10 @@
+Morse Mash
+Copyright 2026 Leon Priest
+
+This product is licensed under the Apache License, Version 2.0 (see LICENSE).
+
+This product bundles fonts from Fontsource (https://fontsource.org), each under
+the SIL Open Font License, Version 1.1. Their licences are in fonts/licenses/:
+  - Syne (Copyright 2019 The Syne Project Authors)
+  - Figtree (Copyright 2022 The Figtree Project Authors)
+  - JetBrains Mono (Copyright 2020 The JetBrains Mono Project Authors)

@@ -2,8 +2,27 @@
   "name": "morse-mash",
   "version": "1.0.0",
   "description": "A browser game that helps people learn, use and understand Morse code.",
+  "author": "Leon Priest",
+  "homepage": "https://7h3v01d.github.io/morse-mash/",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/7h3v01d/morse-mash.git"
+  },
+  "bugs": {
+    "url": "https://github.com/7h3v01d/morse-mash/issues"
+  },
+  "keywords": [
+    "morse-code",
+    "morse",
+    "cw",
+    "ham-radio",
+    "koch",
+    "farnsworth",
+    "learning",
+    "game"
+  ],
   "private": true,
-  "license": "MIT",
+  "license": "Apache-2.0",
   "scripts": {
     "test": "node --test",
     "start": "python3 -m http.server 8080"

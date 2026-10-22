@@ -28,23 +28,56 @@
       return s === '.' ? (i === a.length - 1 ? 'dit' : 'di') : 'dah';
     }).join('-');
   };
-  // Standard timing: dot 1, dash 3, gap inside a letter 1, between letters 3, between words 7.
-  function buildSchedule(text, unit) {
-    const ev = [];
-    let t = 0;
+  // Prosigns are sent as one run of symbols with no letter gap. Written <AR> in text.
+  const PROSIGNS = {
+    AR: '.-.-.', AS: '.-...', BT: '-...-', CT: '-.-.-', HH: '........', KN: '-.--.', SK: '...-.-', SOS: '...---...'
+  };
+  const PROSIGN_INFO = {
+    AR: 'End of message', AS: 'Wait', BT: 'Break, new paragraph', CT: 'Start of message',
+    HH: 'Error, ignore the last word', KN: 'Go ahead, named station only', SK: 'End of contact', SOS: 'Distress'
+  };
+  // Splits text into tokens: ' ' for a word gap, or { label, code, pro } for a character or <PROSIGN>.
+  function tokenize(text) {
+    const out = [];
     const up = String(text).toUpperCase();
     for (let i = 0; i < up.length; i++) {
       const ch = up[i];
-      if (ch === ' ') { t += 4 * unit; continue; }
-      const code = MORSE[ch];
-      if (!code) continue;
-      for (let j = 0; j < code.length; j++) {
-        const d = code[j] === '.' ? unit : 3 * unit;
+      if (ch === ' ') { out.push(' '); continue; }
+      if (ch === '<') {
+        const j = up.indexOf('>', i + 1);
+        const name = j > i ? up.slice(i + 1, j) : '';
+        if (PROSIGNS[name]) { out.push({ label: name, code: PROSIGNS[name], pro: true }); i = j; continue; }
+      }
+      if (MORSE[ch]) out.push({ label: ch, code: MORSE[ch], pro: false });
+    }
+    return out;
+  }
+  // Farnsworth: characters keep their full speed, the gaps between them stretch so the overall
+  // speed drops to effWpm. Returns the length of one gap unit in ms (ARRL formula).
+  function farnsworthGap(charWpm, effWpm) {
+    if (!(effWpm > 0) || effWpm >= charWpm) return unitMs(charWpm);
+    const spacing = (60 * charWpm - 37.2 * effWpm) / (effWpm * charWpm);
+    return spacing * 1000 / 19;
+  }
+  // The code for a character or a prosign name, or null.
+  function codeFor(label) { return MORSE[label] || PROSIGNS[label] || null; }
+  // Text to send for a character or prosign, so prosigns go out as one run.
+  function sendText(label) { return PROSIGNS[label] ? '<' + label + '>' : label; }
+  // Standard timing: dot 1, dash 3, gap inside a letter 1, between letters 3, between words 7.
+  // With a gap unit longer than the unit, the letter and word gaps use it instead (Farnsworth).
+  function buildSchedule(text, unit, gap) {
+    const g = gap > unit ? gap : unit;
+    const ev = [];
+    let t = 0;
+    tokenize(text).forEach(function (tok) {
+      if (tok === ' ') { t += 4 * g; return; }
+      for (let j = 0; j < tok.code.length; j++) {
+        const d = tok.code[j] === '.' ? unit : 3 * unit;
         ev.push({ start: t, dur: d });
         t += d + unit;
       }
-      t += 2 * unit;
-    }
+      t += 3 * g - unit;
+    });
     return { ev: ev, total: t };
   }
   function scheduleForCode(code, unit) {
@@ -108,7 +141,7 @@
   }
   // conf keys look like "S>H": the character was S and the answer was H.
   function topConfusions(conf, limit) {
-    return Object.keys(conf).map(function (k) { return { target: k[0], got: k[2], n: conf[k] }; })
+    return Object.keys(conf).map(function (k) { const p = k.split('>'); return { target: p[0], got: p[1], n: conf[k] }; })
       .filter(function (x) { return x.n > 0; })
       .sort(function (a, b) { return b.n - a.n; })
       .slice(0, limit);
@@ -116,14 +149,14 @@
   function confusedWith(conf, ch) {
     const agg = {};
     Object.keys(conf).forEach(function (k) {
-      const t = k[0], g = k[2];
+      const p = k.split('>'), t = p[0], g = p[1];
       if (t === ch) agg[g] = (agg[g] || 0) + conf[k];
       else if (g === ch) agg[t] = (agg[t] || 0) + conf[k];
     });
     return Object.keys(agg).sort(function (a, b) { return agg[b] - agg[a]; });
   }
   function compareNote(a, b) {
-    const x = MORSE[a], y = MORSE[b];
+    const x = codeFor(a), y = codeFor(b);
     if (!x || !y || x === y) return '';
     const extra = function (long, short, L, S) {
       const tail = long.slice(short.length);
@@ -147,6 +180,34 @@
     base.forEach(add);
     base.forEach(function (c) { add(confusedWith(conf, c)[0]); });
     return out.slice(0, 10);
+  }
+  // Sending a word: a silence of at least letterSplit ms between presses starts a new letter.
+  // It sits halfway between the gap inside a letter (1 unit) and the gap between letters (3 gap units),
+  // so it stretches with Farnsworth spacing.
+  function letterSplit(unit, gap) {
+    const g = gap > unit ? gap : unit;
+    return (unit + 3 * g) / 2;
+  }
+  // presses: [{ down, up }] times in ms, in order. Returns one code per letter.
+  function segmentTaps(presses, unit, gap) {
+    const split = letterSplit(unit, gap);
+    const letters = [];
+    let cur = [];
+    presses.forEach(function (p, i) {
+      if (i && p.down - presses[i - 1].up >= split) { letters.push(cur); cur = []; }
+      cur.push(p.up - p.down);
+    });
+    if (cur.length) letters.push(cur);
+    return letters.map(function (d) { return classify(d, unit); });
+  }
+  // Letter-by-letter result for a sent word. Extra letters past the end count as wrong.
+  function scoreWord(word, codes) {
+    const out = word.split('').map(function (ch, i) {
+      const code = codes[i] || '';
+      return { want: ch, code: code, got: code ? REV[code] || null : null, ok: code === MORSE[ch] };
+    });
+    for (let i = word.length; i < codes.length; i++) out.push({ want: null, code: codes[i], got: REV[codes[i]] || null, ok: false });
+    return out;
   }
   // Mash: a word's code with the letter gaps removed, to be split back into letters.
   const isLetter = function (c) { return !!c && /^[A-Z]$/.test(c); };
@@ -258,12 +319,92 @@
     { id: 'sprint40', name: 'Speed Reader', sig: '...-', desc: 'Decode 40 letters in one Sprint.', goal: function (s) { return [s.bestSprint, 40]; } },
     { id: 'tree5', name: 'Tree Climber', sig: '.--', desc: 'Find five letters on the tree in a row with no wrong turns and no hints.', goal: function (s) { return [s.stats.treeBest, 5]; } },
     { id: 'tap5', name: 'Steady Hand', sig: '-..', desc: 'Tap five characters correctly in a row.', goal: function (s) { return [s.stats.tapBest, 5]; } },
+    { id: 'word5', name: 'Word Sender', sig: '..-.', desc: 'Send five words in a row in Tap with every letter right.', goal: function (s) { return [s.stats.wordBest || 0, 5]; } },
     { id: 'mash5', name: 'Mash Master', sig: '--.', desc: 'Split five strings cleanly, with no hints and no wrong checks.', goal: function (s) { return [s.stats.mashClean, 5]; } },
     { id: 'daily3', name: 'Daily Habit', sig: '.-.', desc: 'Solve the daily message three days running.', goal: function (s) { return [s.dailyBest, 3]; } },
     { id: 'daily7', name: 'Week on the Wire', sig: '.---', desc: 'Solve the daily message seven days running.', goal: function (s) { return [s.dailyBest, 7]; } },
     { id: 'silent', name: 'Silent Signals', sig: '-...', desc: 'Give ten right answers with sound off, using light or buzz.', goal: function (s) { return [s.stats.silent, 10]; } },
     { id: 'solid', name: 'Solid Ground', sig: '-.-.', desc: 'Track 15 characters with none of them shaky.', goal: function (s) { return [s.shaky === 0 ? s.tracked : 0, 15]; } }
   ];
+
+  // Saved progress. restoreState accepts anything (old saves, imported files, junk) and returns a clean state.
+  const SAVE_APP = 'morse-mash';
+  const SAVE_VERSION = 1;
+  function freshState() {
+    return {
+      n: 5, wpm: 10, eff: 10, mastery: {}, conf: {},
+      sig: { sound: true, light: false, buzz: false, noise: 0 },
+      opts: { pro: false, autoNext: false, tapWords: false },
+      stats: { treeBest: 0, tapBest: 0, wordBest: 0, mashClean: 0, silent: 0 }, badges: {},
+      daily: { last: '', streak: 0, best: 0, solved: 0, tries: 0 }, bestSprint: 0, bestStreak: 0
+    };
+  }
+  const isObj = function (x) { return !!x && typeof x === 'object' && !Array.isArray(x); };
+  const count = function (x) { return typeof x === 'number' && isFinite(x) && x > 0 ? Math.floor(x) : 0; };
+  const inRange = function (x, lo, hi) { return typeof x === 'number' && x >= lo && x <= hi; };
+  const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+  function restoreState(s) {
+    const st = freshState();
+    if (!isObj(s)) return st;
+    if (s.app === SAVE_APP && isObj(s.state)) s = s.state; // an exported file
+    if (inRange(s.n, 2, 36)) st.n = Math.round(s.n);
+    if (inRange(s.wpm, 5, 25)) st.wpm = Math.round(s.wpm);
+    st.eff = inRange(s.eff, 5, 25) ? Math.min(Math.round(s.eff), st.wpm) : st.wpm;
+    if (isObj(s.mastery)) {
+      Object.keys(s.mastery).forEach(function (k) {
+        const m = s.mastery[k];
+        if (!codeFor(k) || !isObj(m)) return;
+        const tot = count(m.tot);
+        const out = { ok: Math.min(count(m.ok), tot), tot: tot };
+        if (typeof m.rec === 'string' && /^[01]{1,12}$/.test(m.rec)) out.rec = m.rec;
+        else if (tot > 0) {
+          // Older saves only kept totals: rebuild a recent-results string with the same ratio.
+          const len = Math.min(tot, 12);
+          const good = Math.round(out.ok / tot * len);
+          out.rec = '0'.repeat(len - good) + '1'.repeat(good);
+        }
+        if (out.tot || out.rec) st.mastery[k] = out;
+      });
+    }
+    if (isObj(s.conf)) {
+      Object.keys(s.conf).forEach(function (k) {
+        const p = k.split('>');
+        if (p.length === 2 && codeFor(p[0]) && codeFor(p[1]) && p[0] !== p[1] && count(s.conf[k])) st.conf[k] = count(s.conf[k]);
+      });
+    }
+    if (isObj(s.stats)) Object.keys(st.stats).forEach(function (k) { st.stats[k] = count(s.stats[k]); });
+    if (isObj(s.badges)) {
+      BADGES.forEach(function (b) {
+        if (typeof s.badges[b.id] === 'string' && DATE_RE.test(s.badges[b.id])) st.badges[b.id] = s.badges[b.id];
+      });
+    }
+    if (isObj(s.daily)) {
+      st.daily.last = typeof s.daily.last === 'string' && DATE_RE.test(s.daily.last) ? s.daily.last : '';
+      ['streak', 'best', 'solved', 'tries'].forEach(function (k) { st.daily[k] = count(s.daily[k]); });
+    }
+    if (isObj(s.sig)) {
+      st.sig.sound = s.sig.sound !== false;
+      st.sig.light = s.sig.light === true;
+      st.sig.buzz = s.sig.buzz === true;
+      // Noise was on/off before it had levels 0 to 3; on maps to the middle level.
+      st.sig.noise = s.sig.noise === true ? 2 : inRange(s.sig.noise, 0, 3) ? Math.round(s.sig.noise) : 0;
+      if (!st.sig.sound && !st.sig.light && !st.sig.buzz) st.sig.sound = true;
+    }
+    if (isObj(s.opts)) Object.keys(st.opts).forEach(function (k) { st.opts[k] = s.opts[k] === true; });
+    st.bestSprint = count(s.bestSprint);
+    st.bestStreak = count(s.bestStreak);
+    return st;
+  }
+  function exportState(st, when) {
+    return { app: SAVE_APP, version: SAVE_VERSION, exported: when || '', state: restoreState(st) };
+  }
+  // A short text for sharing a solved daily message, without giving the answer away.
+  function dailyShareText(key, phrase, tries, streak) {
+    const words = phrase.split(' ').map(function (w) { return w.split('').map(function (c) { return MORSE[c]; }).join(' '); });
+    const bars = words.map(function (w) { return w.replace(/[.]/g, '•').replace(/-/g, '—'); });
+    return 'Morse Mash daily ' + key + '\n' + (tries === 0 ? 'Solved first try' : 'Solved after ' + (tries + 1) + ' tries') +
+      (streak > 1 ? ', streak ' + streak : '') + '\n' + bars.join(' / ');
+  }
 
   return {
     MORSE: MORSE,
@@ -273,6 +414,15 @@
     classify: classify,
     decodeCode: decodeCode,
     spoken: spoken,
+    PROSIGNS: PROSIGNS,
+    PROSIGN_INFO: PROSIGN_INFO,
+    tokenize: tokenize,
+    codeFor: codeFor,
+    sendText: sendText,
+    letterSplit: letterSplit,
+    segmentTaps: segmentTaps,
+    scoreWord: scoreWord,
+    farnsworthGap: farnsworthGap,
     buildSchedule: buildSchedule,
     scheduleForCode: scheduleForCode,
     buildTree: buildTree,
@@ -302,6 +452,10 @@
     liveStreak: liveStreak,
     normalizePhrase: normalizePhrase,
     wordsRight: wordsRight,
-    BADGES: BADGES
+    BADGES: BADGES,
+    freshState: freshState,
+    restoreState: restoreState,
+    exportState: exportState,
+    dailyShareText: dailyShareText
   };
 });
