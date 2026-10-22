@@ -1,0 +1,247 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Morse Mash</title>
+<meta name="description" content="Learn, use and understand Morse code by ear, by tap, by light or by buzz. Free, offline-friendly, no sign-up.">
+<meta name="theme-color" content="#e9eff4" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#0c1520" media="(prefers-color-scheme: dark)">
+<link rel="icon" href="favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body><div class="app">
+  <header class="top">
+    <div class="lamp" id="lamp" aria-hidden="true"></div>
+    <div>
+      <h1>Morse<span class="m2">Mash</span></h1>
+      <p class="tag">Learn it by ear, tap it out, decode it fast.</p>
+    </div>
+  </header>
+
+  <div class="signal-wrap" id="signalWrap" hidden>
+    <div class="signal" id="signal" aria-hidden="true">Signal</div>
+  </div>
+
+  <section class="bar" aria-label="Practice settings">
+    <div class="field">
+      <label for="setSize">Practice set <b id="setSizeVal">5</b></label>
+      <input type="range" id="setSize" min="2" max="36" value="5">
+    </div>
+    <div class="field">
+      <label for="wpm">Speed <b id="wpmVal">10 WPM</b></label>
+      <input type="range" id="wpm" min="5" max="25" value="10">
+    </div>
+    <div class="set-list" id="setList" aria-live="polite"></div>
+    <div class="signals" role="group" aria-labelledby="sigLab">
+      <span class="siglab" id="sigLab">Signals</span>
+      <div class="sigrow">
+        <label class="check" for="sigSound"><input type="checkbox" id="sigSound"> Sound</label>
+        <label class="check" for="sigLight"><input type="checkbox" id="sigLight"> Light</label>
+        <label class="check" for="sigBuzz"><input type="checkbox" id="sigBuzz"> <span id="sigBuzzTxt">Buzz</span></label>
+        <button class="btn ghost sm" id="sigTest" type="button">Test signals</button>
+      </div>
+      <p class="signote" id="sigNote"></p>
+    </div>
+  </section>
+
+  <nav class="tabs" role="tablist" aria-label="Game modes">
+    <button class="tab" role="tab" data-mode="learn" aria-selected="true">Learn<small>chart + playground</small></button>
+    <button class="tab" role="tab" data-mode="tree" aria-selected="false">Tree<small>see the logic</small></button>
+    <button class="tab" role="tab" data-mode="listen" aria-selected="false">Listen<small>ear trainer</small></button>
+    <button class="tab" role="tab" data-mode="tap" aria-selected="false">Tap<small>send it yourself</small></button>
+    <button class="tab" role="tab" data-mode="mash" aria-selected="false">Mash<small>split the string</small></button>
+    <button class="tab" role="tab" data-mode="sprint" aria-selected="false">Sprint<small>60 second decode</small></button>
+    <button class="tab" role="tab" data-mode="daily" aria-selected="false">Daily<small>one a day</small></button>
+    <button class="tab" role="tab" data-mode="weak" aria-selected="false">Weak spots<small>your slips</small></button>
+    <button class="tab" role="tab" data-mode="badges" aria-selected="false">Badges<small>your wins</small></button>
+  </nav>
+
+  <main>
+    <!-- LEARN -->
+    <section class="panel" id="learn">
+      <h2>The chart</h2>
+      <p>A dot is one short beep. A dash lasts three times as long. Tap any character to hear it. Dimmed ones are outside your practice set for now.</p>
+      <div class="detail" id="detail"></div>
+      <div class="grid" id="grid"></div>
+      <h2>Playground</h2>
+      <p>Type anything and hear it sent at your chosen speed.</p>
+      <form class="play-in" id="playForm">
+        <input id="playText" value="SOS" maxlength="40" autocomplete="off" aria-label="Text to send in Morse">
+        <button class="btn" type="submit">Send it</button>
+      </form>
+      <div class="out-code" id="playOut"></div>
+    </section>
+
+    <!-- TREE -->
+    <section class="panel" id="tree" hidden>
+      <h2>The Morse tree</h2>
+      <p>Every letter sits on a branch. Start at the root, step up for a dot and down for a dash, and the path you took is the code. Tap any circle to jump there. Keys: . and - to step, Backspace to go back.</p>
+      <div class="seg">
+        <div class="pair" role="group" aria-label="Tree mode">
+          <button id="trExplore" aria-pressed="true">Explore</button>
+          <button id="trFind" aria-pressed="false">Find it</button>
+        </div>
+        <label class="check" for="trNums"><input type="checkbox" id="trNums"> Include numbers</label>
+      </div>
+      <div class="tree-info" id="trInfo"></div>
+      <div class="msg" id="trMsg" aria-live="polite"></div>
+      <div class="walk">
+        <button class="step dot" id="trDot"><span class="pip"></span>Dot, up</button>
+        <button class="step dash" id="trDash"><span class="pip"></span>Dash, down</button>
+      </div>
+      <div class="row">
+        <button class="btn ghost" id="trBack">Step back</button>
+        <button class="btn ghost" id="trReset">Back to start</button>
+      </div>
+      <div class="legend">
+        <span><i style="background:var(--dot)"></i>dot steps up</span>
+        <span><i style="background:var(--dash)"></i>dash steps down</span>
+      </div>
+      <div class="tree-wrap" id="trWrap"><svg id="trSvg" role="group" aria-label="Morse code tree"></svg></div>
+    </section>
+
+    <!-- LISTEN -->
+    <section class="panel" id="listen" hidden>
+      <h2>Ear trainer</h2>
+      <p>Listen, then pick the character. Hit 90% over ten answers and a new character joins your set. Keyboard: press the letter, Space to replay or go next.</p>
+      <div class="stats">
+        <span>Score <b id="lScore">0</b></span>
+        <span>Streak <b id="lStreak">0</b></span>
+        <span>Best streak <b id="lBest">0</b></span>
+        <span>Level check <b id="lWin">0/10</b></span>
+      </div>
+      <div class="stage">
+        <div class="drill-bar" id="lDrill" hidden></div>
+        <div class="reveal" id="lReveal"></div>
+        <button class="btn ghost" id="lReplay">Play again</button>
+        <div class="opts" id="lOpts"></div>
+        <div class="msg" id="lMsg" aria-live="polite"></div>
+        <button class="btn" id="lNext" hidden>Next</button>
+      </div>
+    </section>
+
+    <!-- TAP -->
+    <section class="panel" id="tap" hidden>
+      <h2>Tap it out</h2>
+      <p>Send the character shown. Press the key, or hold Space. A quick press is a dot, a long one is a dash. Pause when you are done and it checks you.</p>
+      <div class="stats">
+        <span>Score <b id="tScore">0</b></span>
+        <span>Streak <b id="tStreak">0</b></span>
+      </div>
+      <div class="stage">
+        <div class="target" id="tTarget">K</div>
+        <div class="reveal" id="tHint"></div>
+        <div class="entered" id="tEntered" aria-label="What you tapped"></div>
+        <button class="key" id="tKey" aria-label="Morse key. Press for a dot, hold for a dash.">TAP<small>or hold Space</small></button>
+        <div class="msg" id="tMsg" aria-live="polite"></div>
+        <button class="btn ghost" id="tHintBtn">Show the pattern</button>
+      </div>
+    </section>
+
+    <!-- MASH -->
+    <section class="panel" id="mash" hidden>
+      <h2>Mash it apart</h2>
+      <p>Real Morse leaves a gap between letters. Here the gaps are mashed away, so you get one long string. Tap between symbols to place dividers until every chunk is a letter and the chunks use the hidden letters.</p>
+      <div class="stats">
+        <span>Score <b id="mScore">0</b></span>
+        <span>Streak <b id="mStreak">0</b></span>
+      </div>
+      <div class="clue" id="mClue"></div>
+      <div class="mstr" id="mStr"></div>
+      <div class="chunks" id="mChunks"></div>
+      <div class="msg" id="mMsg" aria-live="polite"></div>
+      <div class="row">
+        <button class="btn" id="mCheck">Check</button>
+        <button class="btn ghost" id="mHint">Hint</button>
+        <button class="btn ghost" id="mClear">Clear dividers</button>
+        <button class="btn ghost" id="mHear">Hear the string</button>
+        <button class="btn" id="mNext" hidden>Next one</button>
+      </div>
+      <div class="mfact" id="mFact" hidden></div>
+    </section>
+
+    <!-- SPRINT -->
+    <section class="panel" id="sprint" hidden>
+      <h2>Decode sprint</h2>
+      <p>Words flash up as dots and dashes. Type each one before time runs out. Every correct letter scores a point.</p>
+      <div class="stats">
+        <span>Score <b id="sScore">0</b></span>
+        <span>Time <b id="sTime">60</b></span>
+        <span>Best <b id="sBest">0</b></span>
+      </div>
+      <div class="clock" aria-hidden="true"><span id="sClock"></span></div>
+      <div class="stage">
+        <div class="word-code" id="sCode"></div>
+        <form class="guess" id="sForm">
+          <input id="sInput" autocomplete="off" autocapitalize="characters" aria-label="Your answer" disabled>
+          <button class="btn" type="submit" id="sGo" disabled>Check</button>
+        </form>
+        <div class="msg" id="sMsg" aria-live="polite"></div>
+        <div class="row">
+          <button class="btn" id="sStart">Start 60 seconds</button>
+          <button class="btn ghost" id="sHear" disabled>Hear it</button>
+        </div>
+        <label class="check" for="audioOnly"><input type="checkbox" id="audioOnly"> Signal only (hard mode)</label>
+      </div>
+    </section>
+    <!-- DAILY -->
+    <section class="panel" id="daily" hidden>
+      <h2>Daily message</h2>
+      <p>One coded message a day, the same for everyone who plays on that date. Decode it to keep your streak going. Miss a whole day and the streak starts over.</p>
+      <div class="stats">
+        <span>Streak <b id="dStreak">0</b></span>
+        <span>Best <b id="dBest">0</b></span>
+        <span>Solved <b id="dSolved">0</b></span>
+      </div>
+      <div class="clue" id="dClue"></div>
+      <div class="dcode" id="dCode"></div>
+      <form class="guess wide" id="dForm">
+        <input id="dInput" autocomplete="off" autocapitalize="characters" spellcheck="false" aria-label="Your decoded message" placeholder="Type the message">
+        <button class="btn" type="submit" id="dGo">Check</button>
+      </form>
+      <div class="msg" id="dMsg" aria-live="polite"></div>
+      <div class="row">
+        <button class="btn ghost" id="dHear">Hear it</button>
+        <label class="check" for="dHide"><input type="checkbox" id="dHide"> Hide the dots and dashes</label>
+      </div>
+    </section>
+
+    <!-- WEAK SPOTS -->
+    <section class="panel" id="weak" hidden>
+      <h2>Weak spots</h2>
+      <p>Answers in Listen, Tap, Sprint and the tree are tracked. Recent results count most, so a slip you have fixed stops showing up.</p>
+      <div class="stats" id="wStats"></div>
+      <div class="row">
+        <button class="btn" id="wDrill">Drill my weak spots</button>
+        <button class="btn ghost" id="wReset">Reset stats</button>
+        <span class="row" id="wSure" hidden>Erase all progress?
+          <button class="btn" id="wYes">Yes, erase</button>
+          <button class="btn ghost" id="wNo">Keep it</button>
+        </span>
+      </div>
+      <div class="msg" id="wMsg" aria-live="polite"></div>
+      <h2>Shaky characters</h2>
+      <div class="weak-list" id="wList"></div>
+      <h2>Mix-ups</h2>
+      <div class="weak-list" id="wConf"></div>
+      <h2>Heat map</h2>
+      <div class="legend">
+        <span>Below 60%</span><span>60 to 84%</span><span>85% and up</span><span>Dashed: not practised yet</span>
+      </div>
+      <div class="heat" id="wHeat"></div>
+    </section>
+    <!-- BADGES -->
+    <section class="panel" id="badges" hidden>
+      <h2>Badges</h2>
+      <p id="bSummary"></p>
+      <div class="badges" id="bGrid"></div>
+    </section>
+  </main>
+</div>
+<div class="toast" id="toast" hidden role="status"></div>
+
+<script src="js/morse-core.js"></script>
+<script src="js/app.js"></script>
+</body>
+</html>

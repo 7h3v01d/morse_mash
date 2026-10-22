@@ -1,0 +1,14 @@
+{
+  "name": "morse-mash",
+  "version": "1.0.0",
+  "description": "A browser game that helps people learn, use and understand Morse code.",
+  "private": true,
+  "license": "MIT",
+  "scripts": {
+    "test": "node --test",
+    "start": "python3 -m http.server 8080"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}
