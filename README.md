@@ -25,7 +25,7 @@ If you would rather serve it (some browsers are stricter about files opened from
 npm start          # python3 -m http.server 8080, then open http://localhost:8080
 ```
 
-To put it online, see [Deploy to GitHub Pages](#deploy-to-github-pages).
+Use it online, see [GitHub Pages](https://7h3v01d.github.io/morse_mash/).
 
 ## What's in the game
 
