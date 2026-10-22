@@ -10,7 +10,7 @@ There's no sign-up, no tracking and nothing to install. Everything runs in the p
 [![License: Apache 2.0](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](LICENSE)
 ![No dependencies](https://img.shields.io/badge/dependencies-none-brightgreen.svg)
 
-### [▶ Play Morse Mash](https://7h3v01d.github.io/morse-mash/)
+### [▶ Play Morse Mash](https://7h3v01d.github.io/morse_mash/)
 
 <p>
   <img src="docs/screenshots/listen.png" alt="Listen: after a wrong answer, S and U are shown side by side with a note on how they differ" width="190">
